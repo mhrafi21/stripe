@@ -28,7 +28,6 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 app.post("/create-payment-intent", async (req, res) => {
   const { amount } = req.body;
-  console.log("Creating payment intent with amount:", typeof amount, amount);
   try {
     const paymentIntent = await stripe.paymentIntents.create({
       amount,
