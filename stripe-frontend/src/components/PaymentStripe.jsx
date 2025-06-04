@@ -2,25 +2,91 @@ import { useEffect, useState } from "react";
 import { Elements } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
 import axios from "axios";
-import { useSearchParams } from "react-router";
 import CheckoutForm from "./CheckoutForm";
-
+import { useSearchParams } from "react-router";
+import { ref, get } from "firebase/database";
+import { database } from "../firebase/firebaseConfig";
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
 
-//https://cluster.restakepos.com/payment
-const PaymentStripe =  () => {
+const PaymentStripe = () => {
   const [clientSecret, setClientSecret] = useState("");
   const [searchParams] = useSearchParams();
+  const orderId = searchParams.get("orderId");
+  const token = searchParams.get("token");
+  const [orderNetAmount, setOrderNetAmount] = useState(null);
+  const [stripeData, setStripeData] = useState(null);
 
-  const netAmount = searchParams.get("netAmount") || "0.00";
+  // Fetch order amount
+  useEffect(() => {
+    if (orderId && token) {
+      axios
+        .post(
+          `${
+            import.meta.env.VITE_BASE_URL
+          }/api/orderMaster/findById?orderId=${orderId}`,
+          {},
+          {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        )
+        .then((res) => {
+          const amount = res?.data?.obj?.neetAmount;
+          if (amount) setOrderNetAmount(Number(amount));
+        })
+        .catch((err) =>
+          console.error("Fetch order amount error:", err.message)
+        );
+    }
+  }, [orderId, token]);
+
+  // get data from stripe
 
   useEffect(() => {
-    axios
-      .post("http://localhost:5000/create-payment-intent", {
-        amount: Number(netAmount).toFixed(2) * 100, // Convert to cents
-      }) // amount in cents
-      .then((res) => setClientSecret(res?.data?.clientSecret));
+    const fetchStripeData = async () => {
+      try {
+        const stripeRef = ref(database, "foodpos/maloncho/stripe");
+        const snapshot = await get(stripeRef);
+
+        if (snapshot.exists()) {
+          const fullData = snapshot.val();
+
+          // Remove the 'user' key if it exists
+
+          setStripeData({ acct: fullData?.acct, fee: fullData?.fee });
+        } else {
+          console.warn("No Stripe data found.");
+        }
+      } catch (error) {
+        console.error("Error fetching Stripe data:", error);
+      }
+    };
+
+    fetchStripeData();
   }, []);
+
+  console.log(stripeData);
+
+  // Create payment intent only after orderNetAmount is available
+  useEffect(() => {
+    if (orderNetAmount && orderNetAmount > 0) {
+      axios
+        .post(
+          `${import.meta.env.VITE_BASE_URL}/payment/create-payment-intent`,
+          {
+            amount: orderNetAmount * 100, // Convert to cents
+            fee: stripeData?.fee,
+            acct: stripeData?.acct,
+          }
+        )
+        .then((res) => setClientSecret(res?.data?.clientSecret))
+        .catch((err) =>
+          console.error("Create payment intent error:", err.message)
+        );
+    }
+  }, [orderNetAmount]);
 
   const appearance = {
     theme: "stripe",
