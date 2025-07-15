@@ -3,6 +3,7 @@ import RootLayout from "../RootLayout/RootLayout";
 import Home from "../Home/Home";
 import PaymentSuccess from "../components/PaymentSuccess";
 import NotFound from "../components/Notfound";
+import PayLaterSuccess from "../components/PayLaterSuccess";
 
 const router = createBrowserRouter([
   {
@@ -19,6 +20,10 @@ const router = createBrowserRouter([
         path: "/success",
         Component: () => <PaymentSuccess />,
       },
+      {
+        path: "/order-success",
+        Component: () => <PayLaterSuccess />,
+      }
     ],
   },
 ]);

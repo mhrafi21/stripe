@@ -1,107 +1,124 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Elements } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
 import axios from "axios";
 import CheckoutForm from "./CheckoutForm";
-import { useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";   // ← ✅ use the DOM build
 import { ref, get } from "firebase/database";
 import { database } from "../firebase/firebaseConfig";
+
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
 
 const PaymentStripe = () => {
-  const [clientSecret, setClientSecret] = useState("");
   const [searchParams] = useSearchParams();
-  const orderId = searchParams.get("orderId");
-  const token = searchParams.get("token");
-  const [orderNetAmount, setOrderNetAmount] = useState(null);
-  const [stripeData, setStripeData] = useState(null);
+  const orderId = useMemo(() => searchParams.get("orderId"), [searchParams]);
+  const token   = useMemo(() => searchParams.get("token"),   [searchParams]);
 
-  // Fetch order amount
+  const [orderNetAmount, setOrderNetAmount] = useState(null);   // number
+  const [stripeData,      setStripeData]    = useState(null);   // { acct, fee }
+  const [clientSecret,    setClientSecret]  = useState("");     // string
+
+  /* ────────────────────────── 1. FETCH ORDER AMOUNT ────────────────────────── */
   useEffect(() => {
-    if (orderId && token) {
-      axios
-        .post(
-          `${
-            import.meta.env.VITE_BASE_URL
-          }/api/orderMaster/findById?orderId=${orderId}`,
+    if (!orderId || !token) return;
+
+    const abort = new AbortController();
+
+    (async () => {
+      try {
+        const { data } = await axios.post(
+          `${import.meta.env.VITE_BASE_URL}/api/orderMaster/findById`,
           {},
           {
-            headers: {
+            params  : { orderId },
+            headers : {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
+              Authorization : `Bearer ${token}`,
             },
+            signal: abort.signal,
           }
-        )
-        .then((res) => {
-          const amount = res?.data?.obj?.neetAmount;
-          if (amount) setOrderNetAmount(Number(amount));
-        })
-        .catch((err) =>
-          console.error("Fetch order amount error:", err.message)
         );
-    }
+
+        const amount = Number(data?.obj?.neetAmount);
+        if (!isNaN(amount) && amount > 0) setOrderNetAmount(amount);
+      } catch (err) {
+        if (err.name !== "CanceledError")
+          console.error("Fetch order amount error:", err.message || err);
+      }
+    })();
+
+    return () => abort.abort();
   }, [orderId, token]);
 
-  // get data from stripe
-
+  /* ─────────────────────────── 2. FETCH STRIPE DATA ────────────────────────── */
   useEffect(() => {
-    const fetchStripeData = async () => {
+    let cancelled = false;
+
+    (async () => {
       try {
-        const stripeRef = ref(database, "foodpos/maloncho/stripe");
-        const snapshot = await get(stripeRef);
+        const snap = await get(ref(database, "foodpos/maloncho/stripe"));
+        if (cancelled) return;
 
-        if (snapshot.exists()) {
-          const fullData = snapshot.val();
-
-          // Remove the 'user' key if it exists
-
-          setStripeData({ acct: fullData?.acct, fee: fullData?.fee });
+        if (snap.exists()) {
+          const { acct, fee } = snap.val() ?? {};
+          if (acct && fee) setStripeData({ acct, fee: Number(fee) });
         } else {
-          console.warn("No Stripe data found.");
+          console.warn("No Stripe data found in Firebase");
         }
       } catch (error) {
         console.error("Error fetching Stripe data:", error);
       }
-    };
+    })();
 
-    fetchStripeData();
+    return () => { cancelled = true };
   }, []);
 
-  console.log(stripeData);
-
-  // Create payment intent only after orderNetAmount is available
+  /* ─────────────────── 3. CREATE PAYMENT‑INTENT WHEN READY ─────────────────── */
   useEffect(() => {
-    if (orderNetAmount && orderNetAmount > 0) {
-      axios
-        .post(
+    if (!orderNetAmount || !stripeData?.acct || !stripeData?.fee) return;
+
+    const payload = {
+      amount: (orderNetAmount + stripeData.fee) * 100, // £10.00 → 1000
+      fee   : stripeData.fee,
+      acct  : stripeData.acct,
+    };
+
+    const abort = new AbortController();
+
+    (async () => {
+      try {
+        const { data } = await axios.post(
           `${import.meta.env.VITE_BASE_URL}/payment/create-payment-intent`,
-          {
-            amount: orderNetAmount * 100, // Convert to cents
-            fee: stripeData?.fee,
-            acct: stripeData?.acct,
-          }
-        )
-        .then((res) => setClientSecret(res?.data?.clientSecret))
-        .catch((err) =>
-          console.error("Create payment intent error:", err.message)
+          payload,
+          { signal: abort.signal }
         );
-    }
-  }, [orderNetAmount]);
+        if (data?.clientSecret) setClientSecret(data.clientSecret);
+      } catch (err) {
+        if (err.name !== "CanceledError")
+          console.error(
+            "Create payment‑intent error:",
+            err.response?.data || err.message || err
+          );
+      }
+    })();
 
-  const appearance = {
-    theme: "stripe",
-  };
+    return () => abort.abort();
+  }, [orderNetAmount, stripeData]);
 
-  const options = {
-    clientSecret,
-    appearance,
-  };
+  /* ─────────────────────────────── RENDER ─────────────────────────────── */
+  const appearance = { theme: "stripe" };
 
   return (
     <>
       {clientSecret && (
-        <Elements options={options} stripe={stripePromise}>
-          <CheckoutForm />
+        <Elements
+          stripe={stripePromise}
+          options={{ clientSecret, appearance }}
+          /* ❶ The key forces a fresh mount when clientSecret changes.
+             ❷ This resets internal WebKit pop‑up locks on iOS/Safari. */
+          key={clientSecret}
+        >
+          <CheckoutForm stripeData={stripeData} />
         </Elements>
       )}
     </>

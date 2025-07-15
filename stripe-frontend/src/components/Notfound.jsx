@@ -8,7 +8,7 @@ const NotFound = () => {
          <h1 className="text-4xl font-bold">404</h1>
       <p className="text-lg mt-2">Page Not Found</p>
       <button
-        onClick={() => (window.location.href = "https://maloncho.foodpos.io")}
+        onClick={() => (window.location.href = "https://malonchotandoori.com")}
         className="mt-4 w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600 transition"
       >
         Back to Home

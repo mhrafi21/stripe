@@ -69,7 +69,7 @@ app.post("/create-payment-intent", async (req, res) => {
         destination: "", // Transfer to the seller's account
       },
     });
-
+    
     res.send({
       clientSecret: paymentIntent.client_secret,
     });

@@ -1,9 +1,9 @@
 import { CheckCircle } from 'lucide-react';
-
 const PayLaterSuccess = ({ redirectUrl = "https://malonchotandoori.com" }) => {
   const handleBackToHome = () => {
     window.location.href = redirectUrl;
   };
+
   return (
     <div className="min-h-screen flex justify-center items-center p-4 bg-gray-50">
       <div className="flex flex-col justify-center items-center p-6 sm:p-8 bg-white rounded-xl shadow-2xl max-w-lg w-full mx-auto border border-gray-100">
@@ -11,11 +11,10 @@ const PayLaterSuccess = ({ redirectUrl = "https://malonchotandoori.com" }) => {
           <CheckCircle className="w-16 h-16 sm:w-20 sm:h-20 text-emerald-600" />
         </div>
         <h2 className="text-center mb-4 text-2xl sm:text-3xl font-bold text-gray-900">
-              Payment Successful
+          Order Submitted Successfully!
         </h2>
         <p className="text-center text-gray-600 mb-6 sm:mb-8">
-            Thank you for your payment! Your order has been completed
-        successfully.
+          Thank you for your order. The payment can pay at a later time.
         </p>
         <button
           onClick={handleBackToHome}
